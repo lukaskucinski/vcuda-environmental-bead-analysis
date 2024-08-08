@@ -1,0 +1,1128 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="initial-scale=1,user-scalable=no,maximum-scale=1,width=device-width">
+        <meta name="mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <link rel="stylesheet" href="css/leaflet.css">
+        <link rel="stylesheet" href="css/L.Control.Layers.Tree.css">
+        <link rel="stylesheet" href="css/qgis2web.css">
+        <link rel="stylesheet" href="css/fontawesome-all.min.css">
+        <link rel="stylesheet" href="css/filter.css">
+<link rel="stylesheet" href="css/nouislider.min.css">
+        <link rel="stylesheet" href="css/leaflet-control-geocoder.Geocoder.css">
+        <link rel="stylesheet" href="css/leaflet-measure.css">
+        <style>
+        html, body, #map {
+            width: 100%;
+            height: 100%;
+            padding: 0;
+            margin: 0;
+        }
+        </style>
+        <title>Vermont VCUDA Environmental/Permitting BEAD Analysis Map</title>
+    </head>
+    <body>
+        <div id="map">
+        </div>
+        <script src="js/qgis2web_expressions.js"></script>
+        <script src="js/leaflet.js"></script>
+        <script src="js/L.Control.Layers.Tree.min.js"></script>
+        <script src="js/leaflet.rotatedMarker.js"></script>
+        <script src="js/leaflet.pattern.js"></script>
+        <script src="js/leaflet-hash.js"></script>
+        <script src="js/Autolinker.min.js"></script>
+        <script src="js/rbush.min.js"></script>
+        <script src="js/labelgun.min.js"></script>
+        <script src="js/labels.js"></script>
+        <script src="js/leaflet-control-geocoder.Geocoder.js"></script>
+        <script src="js/leaflet-measure.js"></script>
+        <script src="js/tailDT.js"></script>
+<script src="js/nouislider.min.js"></script>
+<script src="js/wNumb.js"></script>
+        <script src="data/VermontCUDTerritories_3.js"></script>
+        <script src="data/USGSPADJurisdiction_4.js"></script>
+        <script src="data/EnvironmentalPermittingIndex_5.js"></script>
+        <script>
+        var map = L.map('map', {
+            zoomControl:false, maxZoom:28, minZoom:1
+        })
+        var hash = new L.Hash(map);
+        map.attributionControl.setPrefix('<a href="https://github.com/tomchadwin/qgis2web" target="_blank">qgis2web</a> &middot; <a href="https://leafletjs.com" title="A JS library for interactive maps">Leaflet</a> &middot; <a href="https://qgis.org">QGIS</a>');
+        var autolinker = new Autolinker({truncate: {length: 30, location: 'smart'}});
+        // remove popup's row if "visible-with-data"
+        function removeEmptyRowsFromPopupContent(content, feature) {
+         var tempDiv = document.createElement('div');
+         tempDiv.innerHTML = content;
+         var rows = tempDiv.querySelectorAll('tr');
+         for (var i = 0; i < rows.length; i++) {
+             var td = rows[i].querySelector('td.visible-with-data');
+             var key = td ? td.id : '';
+             if (td && td.classList.contains('visible-with-data') && feature.properties[key] == null) {
+                 rows[i].parentNode.removeChild(rows[i]);
+             }
+         }
+         return tempDiv.innerHTML;
+        }
+        // add class to format popup if it contains media
+		function addClassToPopupIfMedia(content, popup) {
+			var tempDiv = document.createElement('div');
+			tempDiv.innerHTML = content;
+			if (tempDiv.querySelector('td img')) {
+				popup._contentNode.classList.add('media');
+					// Delay to force the redraw
+					setTimeout(function() {
+						popup.update();
+					}, 10);
+			} else {
+				popup._contentNode.classList.remove('media');
+			}
+		}
+        var title = new L.Control({'position':'topright'});
+        title.onAdd = function (map) {
+            this._div = L.DomUtil.create('div', 'info');
+            this.update();
+            return this._div;
+        };
+        title.update = function () {
+            this._div.innerHTML = '<h2>Vermont VCUDA Environmental/Permitting BEAD Analysis Map</h2>';
+        };
+        title.addTo(map);
+        var abstract = new L.Control({'position':'bottomleft'});
+        abstract.onAdd = function (map) {
+            this._div = L.DomUtil.create('div',
+            'leaflet-control abstract');
+            this._div.id = 'abstract'
+                this._div.setAttribute("onmouseenter", "abstract.show()");
+                this._div.setAttribute("onmouseleave", "abstract.hide()");
+                this.hide();
+                return this._div;
+            };
+            abstract.hide = function () {
+                this._div.classList.remove("abstractUncollapsed");
+                this._div.classList.add("abstract");
+                this._div.innerHTML = 'i'
+            }
+            abstract.show = function () {
+                this._div.classList.remove("abstract");
+                this._div.classList.add("abstractUncollapsed");
+                this._div.innerHTML = 'This map examines BEAD eligible Broadband Serviceable Locations (BSLs) in the State of Vermont as defined by the VCBB as of July, 2024. In preparation for the bidding process, VCUDA analyzed various intersecting environmental layers. The Index value is the count of layers intersected by the BEAD Eligible BSL. The BSLs can be filtered by CUD in the right hand pane. For internal use only. Questions can be directed to kucinsk.gisi@gmail.com. <br /><br />August 7, 2024';
+        };
+        abstract.addTo(map);
+        var zoomControl = L.control.zoom({
+            position: 'topleft'
+        }).addTo(map);
+        var measureControl = new L.Control.Measure({
+            position: 'topleft',
+            primaryLengthUnit: 'meters',
+            secondaryLengthUnit: 'kilometers',
+            primaryAreaUnit: 'sqmeters',
+            secondaryAreaUnit: 'hectares'
+        });
+        measureControl.addTo(map);
+        document.getElementsByClassName('leaflet-control-measure-toggle')[0].innerHTML = '';
+        document.getElementsByClassName('leaflet-control-measure-toggle')[0].className += ' fas fa-ruler';
+        var bounds_group = new L.featureGroup([]);
+        function setBounds() {
+            if (bounds_group.getLayers().length) {
+                map.fitBounds(bounds_group.getBounds());
+            }
+        }
+        map.createPane('pane_GoogleSatellite_0');
+        map.getPane('pane_GoogleSatellite_0').style.zIndex = 400;
+        var layer_GoogleSatellite_0 = L.tileLayer('http://www.google.cn/maps/vt?lyrs=s@189&gl=cn&x={x}&y={y}&z={z}', {
+            pane: 'pane_GoogleSatellite_0',
+            opacity: 1.0,
+            attribution: '',
+            minZoom: 1,
+            maxZoom: 28,
+            minNativeZoom: 0,
+            maxNativeZoom: 18
+        });
+        layer_GoogleSatellite_0;
+        map.addLayer(layer_GoogleSatellite_0);
+        map.createPane('pane_OpenStreetMap_1');
+        map.getPane('pane_OpenStreetMap_1').style.zIndex = 401;
+        var layer_OpenStreetMap_1 = L.tileLayer('http://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            pane: 'pane_OpenStreetMap_1',
+            opacity: 1.0,
+            attribution: '',
+            minZoom: 1,
+            maxZoom: 28,
+            minNativeZoom: 0,
+            maxNativeZoom: 18
+        });
+        layer_OpenStreetMap_1;
+        map.addLayer(layer_OpenStreetMap_1);
+        map.createPane('pane_ESRITerrain_2');
+        map.getPane('pane_ESRITerrain_2').style.zIndex = 402;
+        var layer_ESRITerrain_2 = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}', {
+            pane: 'pane_ESRITerrain_2',
+            opacity: 0.5,
+            attribution: '',
+            minZoom: 1,
+            maxZoom: 28,
+            minNativeZoom: 0,
+            maxNativeZoom: 19
+        });
+        layer_ESRITerrain_2;
+        map.addLayer(layer_ESRITerrain_2);
+        function pop_VermontCUDTerritories_3(feature, layer) {
+            var popupContent = '<table>\
+                    <tr>\
+                        <th scope="row">Town</th>\
+                        <td>' + (feature.properties['TOWNNAMEMC'] !== null ? autolinker.link(feature.properties['TOWNNAMEMC'].toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">CUD Name</th>\
+                        <td>' + (feature.properties['CUD_DBA'] !== null ? autolinker.link(feature.properties['CUD_DBA'].toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+        function style_VermontCUDTerritories_3_0(feature) {
+            var context = {
+                feature: feature,
+                variables: {}
+            };
+            // Start of if blocks and style check logic
+            if (exp_VermontCUDTerritories_3rule0_eval_expression(context)) {
+                  return {
+                pane: 'pane_VermontCUDTerritories_3',
+                opacity: 1,
+                color: 'rgba(35,35,35,0.5)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(51,237,54,0.5)',
+                interactive: true,
+            };
+                }
+                else if (exp_VermontCUDTerritories_3rule1_eval_expression(context)) {
+                  return {
+                pane: 'pane_VermontCUDTerritories_3',
+                opacity: 1,
+                color: 'rgba(35,35,35,0.5)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(171,132,226,0.5)',
+                interactive: true,
+            };
+                }
+                else if (exp_VermontCUDTerritories_3rule2_eval_expression(context)) {
+                  return {
+                pane: 'pane_VermontCUDTerritories_3',
+                opacity: 1,
+                color: 'rgba(35,35,35,0.5)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(192,239,22,0.5)',
+                interactive: true,
+            };
+                }
+                else if (exp_VermontCUDTerritories_3rule3_eval_expression(context)) {
+                  return {
+                pane: 'pane_VermontCUDTerritories_3',
+                opacity: 1,
+                color: 'rgba(35,35,35,0.5)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(70,194,228,0.5)',
+                interactive: true,
+            };
+                }
+                else if (exp_VermontCUDTerritories_3rule4_eval_expression(context)) {
+                  return {
+                pane: 'pane_VermontCUDTerritories_3',
+                opacity: 1,
+                color: 'rgba(35,35,35,0.5)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(55,202,117,0.5)',
+                interactive: true,
+            };
+                }
+                else if (exp_VermontCUDTerritories_3rule5_eval_expression(context)) {
+                  return {
+                pane: 'pane_VermontCUDTerritories_3',
+                opacity: 1,
+                color: 'rgba(35,35,35,0.5)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(212,70,181,0.5)',
+                interactive: true,
+            };
+                }
+                else if (exp_VermontCUDTerritories_3rule6_eval_expression(context)) {
+                  return {
+                pane: 'pane_VermontCUDTerritories_3',
+                opacity: 1,
+                color: 'rgba(35,35,35,0.5)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(92,211,18,0.5)',
+                interactive: true,
+            };
+                }
+                else if (exp_VermontCUDTerritories_3rule7_eval_expression(context)) {
+                  return {
+                pane: 'pane_VermontCUDTerritories_3',
+                opacity: 1,
+                color: 'rgba(35,35,35,0.5)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(217,55,53,0.5)',
+                interactive: true,
+            };
+                }
+                else if (exp_VermontCUDTerritories_3rule8_eval_expression(context)) {
+                  return {
+                pane: 'pane_VermontCUDTerritories_3',
+                opacity: 1,
+                color: 'rgba(35,35,35,0.5)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(228,32,107,0.5)',
+                interactive: true,
+            };
+                }
+                else if (exp_VermontCUDTerritories_3rule9_eval_expression(context)) {
+                  return {
+                pane: 'pane_VermontCUDTerritories_3',
+                opacity: 1,
+                color: 'rgba(35,35,35,0.5)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(234,202,57,0.5)',
+                interactive: true,
+            };
+                }
+                else if (exp_VermontCUDTerritories_3rule10_eval_expression(context)) {
+                  return {
+                pane: 'pane_VermontCUDTerritories_3',
+                opacity: 1,
+                color: 'rgba(35,35,35,0.5)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(14,217,180,0.0)',
+                interactive: true,
+            };
+                }
+                else if (exp_VermontCUDTerritories_3rule11_eval_expression(context)) {
+                  return {
+                pane: 'pane_VermontCUDTerritories_3',
+                opacity: 1,
+                color: 'rgba(35,35,35,0.5)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(176,20,211,0.5)',
+                interactive: true,
+            };
+                }
+                else if (exp_VermontCUDTerritories_3rule12_eval_expression(context)) {
+                  return {
+                pane: 'pane_VermontCUDTerritories_3',
+                opacity: 1,
+                color: 'rgba(35,35,35,0.5)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(133,133,238,0.5)',
+                interactive: true,
+            };
+                }
+                else if (exp_VermontCUDTerritories_3rule13_eval_expression(context)) {
+                  return {
+                pane: 'pane_VermontCUDTerritories_3',
+                opacity: 1,
+                color: 'rgba(35,35,35,0.5)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(73,124,205,0.5)',
+                interactive: true,
+            };
+                }
+            else {
+                return {fill: false, stroke: false};
+            }
+        }
+        map.createPane('pane_VermontCUDTerritories_3');
+        map.getPane('pane_VermontCUDTerritories_3').style.zIndex = 403;
+        map.getPane('pane_VermontCUDTerritories_3').style['mix-blend-mode'] = 'normal';
+        var layer_VermontCUDTerritories_3 = new L.geoJson(json_VermontCUDTerritories_3, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_VermontCUDTerritories_3',
+            layerName: 'layer_VermontCUDTerritories_3',
+            pane: 'pane_VermontCUDTerritories_3',
+            onEachFeature: pop_VermontCUDTerritories_3,
+            style: style_VermontCUDTerritories_3_0,
+        });
+        bounds_group.addLayer(layer_VermontCUDTerritories_3);
+        map.addLayer(layer_VermontCUDTerritories_3);
+        function pop_USGSPADJurisdiction_4(feature, layer) {
+            var popupContent = '<table>\
+                    <tr>\
+                        <th scope="row">CUD Name</th>\
+                        <td class="visible-with-data" id="cud_dba">' + (feature.properties['cud_dba'] !== null ? autolinker.link(feature.properties['cud_dba'].toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Agency</th>\
+                        <td class="visible-with-data" id="managing_agency">' + (feature.properties['managing_agency'] !== null ? autolinker.link(feature.properties['managing_agency'].toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Jurisdiction</th>\
+                        <td class="visible-with-data" id="jurisdiction_type">' + (feature.properties['jurisdiction_type'] !== null ? autolinker.link(feature.properties['jurisdiction_type'].toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">BSL Count</th>\
+                        <td class="visible-with-data" id="bsl_count">' + (feature.properties['bsl_count'] !== null ? autolinker.link(feature.properties['bsl_count'].toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_USGSPADJurisdiction_4_0(feature) {
+            switch(String(feature.properties['jurisdiction_type'])) {
+                case 'Joint':
+                    return {
+                pane: 'pane_USGSPADJurisdiction_4',
+                radius: 4.0,
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(213,24,40,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'Non-Governmental Organization':
+                    return {
+                pane: 'pane_USGSPADJurisdiction_4',
+                radius: 4.0,
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(239,132,22,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'City Land':
+                    return {
+                pane: 'pane_USGSPADJurisdiction_4',
+                radius: 4.0,
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(239,188,22,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'State Park and Recreation':
+                    return {
+                pane: 'pane_USGSPADJurisdiction_4',
+                radius: 4.0,
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(159,238,113,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'State Department of Conservation':
+                    return {
+                pane: 'pane_USGSPADJurisdiction_4',
+                radius: 4.0,
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(0,172,34,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'State Fish and Wildlife':
+                    return {
+                pane: 'pane_USGSPADJurisdiction_4',
+                radius: 4.0,
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(0,229,229,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'Other or Unknown State Land':
+                    return {
+                pane: 'pane_USGSPADJurisdiction_4',
+                radius: 4.0,
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(92,92,92,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'Department of Defense':
+                    return {
+                pane: 'pane_USGSPADJurisdiction_4',
+                radius: 4.0,
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(213,0,177,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'Army Corps of Engineers':
+                    return {
+                pane: 'pane_USGSPADJurisdiction_4',
+                radius: 4.0,
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(131,0,231,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'Natural Resources Conservation Service':
+                    return {
+                pane: 'pane_USGSPADJurisdiction_4',
+                radius: 4.0,
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(41,0,195,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'Forest Service':
+                    return {
+                pane: 'pane_USGSPADJurisdiction_4',
+                radius: 4.0,
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(88,98,222,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'U.S. Fish and Wildlife Service':
+                    return {
+                pane: 'pane_USGSPADJurisdiction_4',
+                radius: 4.0,
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(0,182,229,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'Unknown':
+                    return {
+                pane: 'pane_USGSPADJurisdiction_4',
+                radius: 4.0,
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(161,161,161,1.0)',
+                interactive: true,
+            }
+                    break;
+                default:
+                    return {
+                pane: 'pane_USGSPADJurisdiction_4',
+                radius: 4.0,
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(255,255,255,1.0)',
+                interactive: true,
+            }
+                    break;
+            }
+        }
+        map.createPane('pane_USGSPADJurisdiction_4');
+        map.getPane('pane_USGSPADJurisdiction_4').style.zIndex = 404;
+        map.getPane('pane_USGSPADJurisdiction_4').style['mix-blend-mode'] = 'normal';
+        var layer_USGSPADJurisdiction_4 = new L.geoJson(json_USGSPADJurisdiction_4, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_USGSPADJurisdiction_4',
+            layerName: 'layer_USGSPADJurisdiction_4',
+            pane: 'pane_USGSPADJurisdiction_4',
+            onEachFeature: pop_USGSPADJurisdiction_4,
+            pointToLayer: function (feature, latlng) {
+                var context = {
+                    feature: feature,
+                    variables: {}
+                };
+                return L.circleMarker(latlng, style_USGSPADJurisdiction_4_0(feature));
+            },
+        });
+        bounds_group.addLayer(layer_USGSPADJurisdiction_4);
+        map.addLayer(layer_USGSPADJurisdiction_4);
+        function pop_EnvironmentalPermittingIndex_5(feature, layer) {
+            var popupContent = '<table>\
+                    <tr>\
+                        <th scope="row">CUD Name</th>\
+                        <td>' + (feature.properties['cud_dba'] !== null ? autolinker.link(feature.properties['cud_dba'].toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">ESITE ID</th>\
+                        <td>' + (feature.properties['esite_id'] !== null ? autolinker.link(feature.properties['esite_id'].toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Address</th>\
+                        <td>' + (feature.properties['full_address'] !== null ? autolinker.link(feature.properties['full_address'].toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Status</th>\
+                        <td>' + (feature.properties['status'] !== null ? autolinker.link(feature.properties['status'].toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Agency</th>\
+                        <td class="visible-with-data" id="managing_agency">' + (feature.properties['managing_agency'] !== null ? autolinker.link(feature.properties['managing_agency'].toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Jurisdiction</th>\
+                        <td class="visible-with-data" id="jurisdiction_type">' + (feature.properties['jurisdiction_type'] !== null ? autolinker.link(feature.properties['jurisdiction_type'].toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Historic</th>\
+                        <td class="visible-with-data" id="historic_preservation_district">' + (feature.properties['historic_preservation_district'] !== null ? autolinker.link(feature.properties['historic_preservation_district'].toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Protected</th>\
+                        <td class="visible-with-data" id="protected_area">' + (feature.properties['protected_area'] !== null ? autolinker.link(feature.properties['protected_area'].toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Wetland</th>\
+                        <td class="visible-with-data" id="wetland_type">' + (feature.properties['wetland_type'] !== null ? autolinker.link(feature.properties['wetland_type'].toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Bio Hotspot</th>\
+                        <td class="visible-with-data" id="biological_hotspot_area">' + (feature.properties['biological_hotspot_area'] !== null ? autolinker.link(feature.properties['biological_hotspot_area'].toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Sewer Area</th>\
+                        <td class="visible-with-data" id="sewer_system_area">' + (feature.properties['sewer_system_area'] !== null ? autolinker.link(feature.properties['sewer_system_area'].toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">ROW</th>\
+                        <td class="visible-with-data" id="right_of_way_authority">' + (feature.properties['right_of_way_authority'] !== null ? autolinker.link(feature.properties['right_of_way_authority'].toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Soil Type</th>\
+                        <td class="visible-with-data" id="soil_slope_type">' + (feature.properties['soil_slope_type'] !== null ? autolinker.link(feature.properties['soil_slope_type'].toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Index</th>\
+                        <td class="visible-with-data" id="index">' + (feature.properties['index'] !== null ? autolinker.link(feature.properties['index'].toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+        function style_EnvironmentalPermittingIndex_5_0(feature) {
+            var context = {
+                feature: feature,
+                variables: {}
+            };
+            // Start of if blocks and style check logic
+            if (exp_EnvironmentalPermittingIndex_5rule0_eval_expression(context)) {
+                  return {
+                pane: 'pane_EnvironmentalPermittingIndex_5',
+                radius: 4.0,
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(68,1,0,1.0)',
+                interactive: true,
+            };
+                }
+                else if (exp_EnvironmentalPermittingIndex_5rule1_eval_expression(context)) {
+                  return {
+                pane: 'pane_EnvironmentalPermittingIndex_5',
+                radius: 4.0,
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(0,68,27,1.0)',
+                interactive: true,
+            };
+                }
+                else if (exp_EnvironmentalPermittingIndex_5rule2_eval_expression(context)) {
+                  return {
+                pane: 'pane_EnvironmentalPermittingIndex_5',
+                radius: 4.0,
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(42,146,75,1.0)',
+                interactive: true,
+            };
+                }
+                else if (exp_EnvironmentalPermittingIndex_5rule3_eval_expression(context)) {
+                  return {
+                pane: 'pane_EnvironmentalPermittingIndex_5',
+                radius: 4.0,
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(123,199,124,1.0)',
+                interactive: true,
+            };
+                }
+                else if (exp_EnvironmentalPermittingIndex_5rule4_eval_expression(context)) {
+                  return {
+                pane: 'pane_EnvironmentalPermittingIndex_5',
+                radius: 4.0,
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(247,252,245,1.0)',
+                interactive: true,
+            };
+                }
+            else {
+                return {fill: false, stroke: false};
+            }
+        }
+        map.createPane('pane_EnvironmentalPermittingIndex_5');
+        map.getPane('pane_EnvironmentalPermittingIndex_5').style.zIndex = 405;
+        map.getPane('pane_EnvironmentalPermittingIndex_5').style['mix-blend-mode'] = 'normal';
+        var layer_EnvironmentalPermittingIndex_5 = new L.geoJson(json_EnvironmentalPermittingIndex_5, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_EnvironmentalPermittingIndex_5',
+            layerName: 'layer_EnvironmentalPermittingIndex_5',
+            pane: 'pane_EnvironmentalPermittingIndex_5',
+            onEachFeature: pop_EnvironmentalPermittingIndex_5,
+            pointToLayer: function (feature, latlng) {
+                var context = {
+                    feature: feature,
+                    variables: {}
+                };
+                return L.circleMarker(latlng, style_EnvironmentalPermittingIndex_5_0(feature));
+            },
+        });
+        bounds_group.addLayer(layer_EnvironmentalPermittingIndex_5);
+        map.addLayer(layer_EnvironmentalPermittingIndex_5);
+        map.on("zoomend", function(e) {
+            if (map.getZoom() <= 13 && map.getZoom() >= 2) {
+                map.addLayer(layer_ESRITerrain_2);
+            } else if (map.getZoom() > 13 || map.getZoom() < 2) {
+                map.removeLayer(layer_ESRITerrain_2);
+            }
+        });
+            if (map.getZoom() <= 13 && map.getZoom() >= 2) {
+                map.addLayer(layer_ESRITerrain_2);
+            } else if (map.getZoom() > 13 || map.getZoom() < 2) {
+                map.removeLayer(layer_ESRITerrain_2);
+            }
+        var osmGeocoder = new L.Control.Geocoder({
+            collapsed: true,
+            position: 'topleft',
+            text: 'Search',
+            title: 'Testing'
+        }).addTo(map);
+        document.getElementsByClassName('leaflet-control-geocoder-icon')[0]
+        .className += ' fa fa-search';
+        document.getElementsByClassName('leaflet-control-geocoder-icon')[0]
+        .title += 'Search for a place';
+        var baseMaps = {};
+        var overlaysTree = [
+        {label: '<b>BEAD Eligible BSLs</b>', selectAllCheckbox: true, children: [
+            {label: 'Environmental/Permitting Index<br /><table><tr><td style="text-align: center;"><img src="legend/EnvironmentalPermittingIndex_5_4Index0.png" /></td><td>4 Index</td></tr><tr><td style="text-align: center;"><img src="legend/EnvironmentalPermittingIndex_5_31.png" /></td><td>3</td></tr><tr><td style="text-align: center;"><img src="legend/EnvironmentalPermittingIndex_5_22.png" /></td><td>2</td></tr><tr><td style="text-align: center;"><img src="legend/EnvironmentalPermittingIndex_5_13.png" /></td><td>1</td></tr><tr><td style="text-align: center;"><img src="legend/EnvironmentalPermittingIndex_5_04.png" /></td><td>0</td></tr></table>', layer: layer_EnvironmentalPermittingIndex_5},
+            {label: 'USGS PAD Jurisdiction<br /><table><tr><td style="text-align: center;"><img src="legend/USGSPADJurisdiction_4_Joint0.png" /></td><td>Joint</td></tr><tr><td style="text-align: center;"><img src="legend/USGSPADJurisdiction_4_NonGovernmentalOrganization1.png" /></td><td>Non-Governmental Organization</td></tr><tr><td style="text-align: center;"><img src="legend/USGSPADJurisdiction_4_CityLand2.png" /></td><td>City Land</td></tr><tr><td style="text-align: center;"><img src="legend/USGSPADJurisdiction_4_StateParkandRecreation3.png" /></td><td>State Park and Recreation</td></tr><tr><td style="text-align: center;"><img src="legend/USGSPADJurisdiction_4_StateDepartmentofConservation4.png" /></td><td>State Department of Conservation</td></tr><tr><td style="text-align: center;"><img src="legend/USGSPADJurisdiction_4_StateFishandWildlife5.png" /></td><td>State Fish and Wildlife</td></tr><tr><td style="text-align: center;"><img src="legend/USGSPADJurisdiction_4_OtherorUnknownStateLand6.png" /></td><td>Other or Unknown State Land</td></tr><tr><td style="text-align: center;"><img src="legend/USGSPADJurisdiction_4_DepartmentofDefense7.png" /></td><td>Department of Defense</td></tr><tr><td style="text-align: center;"><img src="legend/USGSPADJurisdiction_4_ArmyCorpsofEngineers8.png" /></td><td>Army Corps of Engineers</td></tr><tr><td style="text-align: center;"><img src="legend/USGSPADJurisdiction_4_NaturalResourcesConservationService9.png" /></td><td>Natural Resources Conservation Service</td></tr><tr><td style="text-align: center;"><img src="legend/USGSPADJurisdiction_4_ForestService10.png" /></td><td>Forest Service</td></tr><tr><td style="text-align: center;"><img src="legend/USGSPADJurisdiction_4_USFishandWildlifeService11.png" /></td><td>U.S. Fish and Wildlife Service</td></tr><tr><td style="text-align: center;"><img src="legend/USGSPADJurisdiction_4_Unknown12.png" /></td><td>Unknown</td></tr><tr><td style="text-align: center;"><img src="legend/USGSPADJurisdiction_4_NoManagingAgency13.png" /></td><td>No Managing Agency</td></tr></table>', layer: layer_USGSPADJurisdiction_4},]},
+            {label: 'Vermont CUD Territories<br /><table><tr><td style="text-align: center;"><img src="legend/VermontCUDTerritories_3_ChittendenCountyCUD0.png" /></td><td>Chittenden County CUD</td></tr><tr><td style="text-align: center;"><img src="legend/VermontCUDTerritories_3_CVFiber1.png" /></td><td>CVFiber</td></tr><tr><td style="text-align: center;"><img src="legend/VermontCUDTerritories_3_CVFiberECFiber2.png" /></td><td>CVFiber/ECFiber</td></tr><tr><td style="text-align: center;"><img src="legend/VermontCUDTerritories_3_DVFiber3.png" /></td><td>DVFiber</td></tr><tr><td style="text-align: center;"><img src="legend/VermontCUDTerritories_3_DVFiberSoVTCUD4.png" /></td><td>DVFiber/SoVTCUD</td></tr><tr><td style="text-align: center;"><img src="legend/VermontCUDTerritories_3_ECFiber5.png" /></td><td>ECFiber</td></tr><tr><td style="text-align: center;"><img src="legend/VermontCUDTerritories_3_LamoilleFiberNet6.png" /></td><td>LamoilleFiberNet</td></tr><tr><td style="text-align: center;"><img src="legend/VermontCUDTerritories_3_MapleBroadband7.png" /></td><td>MapleBroadband</td></tr><tr><td style="text-align: center;"><img src="legend/VermontCUDTerritories_3_NEKBroadband8.png" /></td><td>NEKBroadband</td></tr><tr><td style="text-align: center;"><img src="legend/VermontCUDTerritories_3_NEKBroadbandLamoilleFiberNet9.png" /></td><td>NEKBroadband/LamoilleFiberNet</td></tr><tr><td style="text-align: center;"><img src="legend/VermontCUDTerritories_3_None10.png" /></td><td>None</td></tr><tr><td style="text-align: center;"><img src="legend/VermontCUDTerritories_3_NorthwestFiberworX11.png" /></td><td>NorthwestFiberworX</td></tr><tr><td style="text-align: center;"><img src="legend/VermontCUDTerritories_3_OtterCreekCUD12.png" /></td><td>OtterCreekCUD</td></tr><tr><td style="text-align: center;"><img src="legend/VermontCUDTerritories_3_SoVTCUD13.png" /></td><td>SoVTCUD</td></tr></table>', layer: layer_VermontCUDTerritories_3},
+            {label: "ESRI Terrain", layer: layer_ESRITerrain_2},
+            {label: "OpenStreetMap", layer: layer_OpenStreetMap_1},
+            {label: "Google Satellite", layer: layer_GoogleSatellite_0},]
+        var lay = L.control.layers.tree(null, overlaysTree,{
+            //namedToggle: true,
+            //selectorBack: false,
+            //closedSymbol: '&#8862; &#x1f5c0;',
+            //openedSymbol: '&#8863; &#x1f5c1;',
+            //collapseAll: 'Collapse all',
+            //expandAll: 'Expand all',
+            collapsed: false, 
+        });
+        lay.addTo(map);
+		document.addEventListener("DOMContentLoaded", function() {
+            // set new Layers List height which considers toggle icon
+            function newLayersListHeight() {
+                var layerScrollbarElement = document.querySelector('.leaflet-control-layers-scrollbar');
+                if (layerScrollbarElement) {
+                    var layersListElement = document.querySelector('.leaflet-control-layers-list');
+                    var originalHeight = layersListElement.style.height 
+                        || window.getComputedStyle(layersListElement).height;
+                    var newHeight = parseFloat(originalHeight) - 50;
+                    layersListElement.style.height = newHeight + 'px';
+                }
+            }
+            var isLayersListExpanded = true;
+            var controlLayersElement = document.querySelector('.leaflet-control-layers');
+            var toggleLayerControl = document.querySelector('.leaflet-control-layers-toggle');
+            // toggle Collapsed/Expanded and apply new Layers List height
+            toggleLayerControl.addEventListener('click', function() {
+                if (isLayersListExpanded) {
+                    controlLayersElement.classList.remove('leaflet-control-layers-expanded');
+                } else {
+                    controlLayersElement.classList.add('leaflet-control-layers-expanded');
+                }
+                isLayersListExpanded = !isLayersListExpanded;
+                newLayersListHeight()
+            });	
+			// apply new Layers List height if toggle layerstree
+			if (controlLayersElement) {
+				controlLayersElement.addEventListener('click', function(event) {
+					var toggleLayerHeaderPointer = event.target.closest('.leaflet-layerstree-header-pointer span');
+					if (toggleLayerHeaderPointer) {
+						newLayersListHeight();
+					}
+				});
+			}
+            // Collapsed/Expanded at Start to apply new height
+            setTimeout(function() {
+                toggleLayerControl.click();
+            }, 10);
+            setTimeout(function() {
+                toggleLayerControl.click();
+            }, 10);
+            // Collapsed touch/small screen
+            var isSmallScreen = window.innerWidth < 650;
+            if (isSmallScreen) {
+                setTimeout(function() {
+                    controlLayersElement.classList.remove('leaflet-control-layers-expanded');
+                    isLayersListExpanded = !isLayersListExpanded;
+                }, 500);
+            }  
+        });       
+        setBounds();
+        var mapDiv = document.getElementById('map');
+        var row = document.createElement('div');
+        row.className="row";
+        row.id="all";
+        row.style.height = "100%";
+        var col1 = document.createElement('div');
+        col1.className="col9";
+        col1.id = "mapWindow";
+        col1.style.height = "99%";
+        col1.style.width = "80%";
+        col1.style.display = "inline-block";
+        var col2 = document.createElement('div');
+        col2.className="col3";
+        col2.id = "menu";
+        col2.style.display = "inline-block";
+        mapDiv.parentNode.insertBefore(row, mapDiv);
+        document.getElementById("all").appendChild(col1);
+        document.getElementById("all").appendChild(col2);
+        col1.appendChild(mapDiv)
+        var Filters = {"cud_dba": "str"};
+        function filterFunc() {
+          map.eachLayer(function(lyr){
+          if ("options" in lyr && "dataVar" in lyr["options"]){
+            features = this[lyr["options"]["dataVar"]].features.slice(0);
+            try{
+              for (key in Filters){
+                keyS = key.replace(/[^a-zA-Z0-9_]/g, "")
+                if (Filters[key] == "str" || Filters[key] == "bool"){
+                  var selection = [];
+                  var options = document.getElementById("sel_" + keyS).options
+                  for (var i=0; i < options.length; i++) {
+                    if (options[i].selected) selection.push(options[i].value);
+                  }
+                    try{
+                      if (key in features[0].properties){
+                        for (i = features.length - 1;
+                          i >= 0; --i){
+                          if (selection.indexOf(
+                          features[i].properties[key])<0
+                          && selection.length>0) {
+                          features.splice(i,1);
+                          }
+                        }
+                      }
+                    } catch(err){
+                  }
+                }
+                if (Filters[key] == "int"){
+                  sliderVals =  document.getElementById(
+                    "div_" + keyS).noUiSlider.get();
+                  try{
+                    if (key in features[0].properties){
+                    for (i = features.length - 1; i >= 0; --i){
+                      if (parseInt(features[i].properties[key])
+                          < sliderVals[0]
+                          || parseInt(features[i].properties[key])
+                          > sliderVals[1]){
+                            features.splice(i,1);
+                          }
+                        }
+                      }
+                    } catch(err){
+                    }
+                  }
+                if (Filters[key] == "real"){
+                  sliderVals =  document.getElementById(
+                    "div_" + keyS).noUiSlider.get();
+                  try{
+                    if (key in features[0].properties){
+                    for (i = features.length - 1; i >= 0; --i){
+                      if (features[i].properties[key]
+                          < sliderVals[0]
+                          || features[i].properties[key]
+                          > sliderVals[1]){
+                            features.splice(i,1);
+                          }
+                        }
+                      }
+                    } catch(err){
+                    }
+                  }
+                if (Filters[key] == "date"
+                  || Filters[key] == "datetime"
+                  || Filters[key] == "time"){
+                  try{
+                    if (key in features[0].properties){
+                      HTMLkey = key.replace(/[&\/\\#,+()$~%.'":*?<>{} ]/g, '');
+                      startdate = document.getElementById("dat_" +
+                        HTMLkey + "_date1").value.replace(" ", "T");
+                      enddate = document.getElementById("dat_" +
+                        HTMLkey + "_date2").value.replace(" ", "T");
+                      for (i = features.length - 1; i >= 0; --i){
+                        if (features[i].properties[key] < startdate
+                          || features[i].properties[key] > enddate){
+                          features.splice(i,1);
+                        }
+                      }
+                    }
+                  } catch(err){
+                  }
+                }
+              }
+            } catch(err){
+            }
+          this[lyr["options"]["layerName"]].clearLayers();
+          this[lyr["options"]["layerName"]].addData(features);
+          }
+          })
+        }
+            document.getElementById("menu").appendChild(
+                document.createElement("div"));
+            var div_cud_dba = document.createElement('div');
+            div_cud_dba.id = "div_cud_dba";
+            div_cud_dba.className= "filterselect";
+            document.getElementById("menu").appendChild(div_cud_dba);
+            sel_cud_dba = document.createElement('select');
+            sel_cud_dba.multiple = true;
+            sel_cud_dba.size = 10;
+            sel_cud_dba.id = "sel_cud_dba";
+            var cud_dba_options_str = "<option value='' unselected></option>";
+            sel_cud_dba.onchange = function(){filterFunc()};
+            cud_dba_options_str  += '<option value="CVFiber">CVFiber</option>';
+            cud_dba_options_str  += '<option value="CVFiber/ECFiber">CVFiber/ECFiber</option>';
+            cud_dba_options_str  += '<option value="Chittenden County CUD">Chittenden County CUD</option>';
+            cud_dba_options_str  += '<option value="DVFiber">DVFiber</option>';
+            cud_dba_options_str  += '<option value="DVFiber/SoVTCUD">DVFiber/SoVTCUD</option>';
+            cud_dba_options_str  += '<option value="ECFiber">ECFiber</option>';
+            cud_dba_options_str  += '<option value="LamoilleFiberNet">LamoilleFiberNet</option>';
+            cud_dba_options_str  += '<option value="MapleBroadband">MapleBroadband</option>';
+            cud_dba_options_str  += '<option value="NEKBroadband">NEKBroadband</option>';
+            cud_dba_options_str  += '<option value="NEKBroadband/LamoilleFiberNet">NEKBroadband/LamoilleFiberNet</option>';
+            cud_dba_options_str  += '<option value="None">None</option>';
+            cud_dba_options_str  += '<option value="NorthwestFiberworX">NorthwestFiberworX</option>';
+            cud_dba_options_str  += '<option value="OtterCreekCUD">OtterCreekCUD</option>';
+            cud_dba_options_str  += '<option value="SoVTCUD">SoVTCUD</option>';
+            sel_cud_dba.innerHTML = cud_dba_options_str;
+            div_cud_dba.appendChild(sel_cud_dba);
+            var lab_cud_dba = document.createElement('div');
+            lab_cud_dba.innerHTML = 'cud_dba';
+            lab_cud_dba.className = 'filterlabel';
+            div_cud_dba.appendChild(lab_cud_dba);
+            var reset_cud_dba = document.createElement('div');
+            reset_cud_dba.innerHTML = 'clear filter';
+            reset_cud_dba.className = 'filterlabel';
+            reset_cud_dba.onclick = function() {
+                var options = document.getElementById("sel_cud_dba").options;
+                for (var i=0; i < options.length; i++) {
+                    options[i].selected = false;
+                }
+                filterFunc();
+            };
+            div_cud_dba.appendChild(reset_cud_dba);
+        resetLabels([layer_VermontCUDTerritories_3]);
+        map.on("zoomend", function(){
+            resetLabels([layer_VermontCUDTerritories_3]);
+        });
+        map.on("layeradd", function(){
+            resetLabels([layer_VermontCUDTerritories_3]);
+        });
+        map.on("layerremove", function(){
+            resetLabels([layer_VermontCUDTerritories_3]);
+        });
+        </script>
+    </body>
+</html>
