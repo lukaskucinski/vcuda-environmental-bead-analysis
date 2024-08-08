@@ -702,7 +702,7 @@
                     </tr>\
                     <tr>\
                         <th scope="row">ESITE ID</th>\
-                        <td>' + (feature.properties['esite_id'] !== null ? autolinker.link(feature.properties['esite_id'].toString()) : '') + '</td>\
+                        <td>' + (feature.properties['esite_id'] ? autolinker.link(feature.properties['esite_id'].toString()) : 'N/A') + '</td>\
                     </tr>\
                     <tr>\
                         <th scope="row">Address</th>\
